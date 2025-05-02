@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>注文フォーム</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      max-width: 600px;
+      margin: auto;
+    }
+    .confirm-btn {
+      font-size: 1.2em;
+      padding: 15px 30px;
+      margin: 10px 5px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      width: 45%;
+    }
+    .confirm-btn:hover {
+      background-color: #45a049;
+    }
+    .cancel-btn {
+      background-color: #f44336;
+    }
+    .cancel-btn:hover {
+      background-color: #d32f2f;
+    }
+    .quantity-input {
+      width: 60px;
+      margin-top: 5px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow-x: auto;
+      display: block;
+    }
+    th, td {
+      padding: 8px;
+      text-align: center;
+      border: 1px solid #ccc;
+      white-space: nowrap;
+    }
+    #order-result {
+      margin-top: 40px;
+      font-size: 1.1em;
+    }
+    h2, h3 {
+      margin-top: 20px;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+
+<!-- ボタン（上） -->
+<div style="text-align: center;">
+  <button class="confirm-btn" onclick="confirmOrder()">注文確定</button>
+  <button class="confirm-btn cancel-btn" onclick="resetOrder()">取消</button>
+</div>
+
+<!-- 商品テーブル -->
+<table>
+  <thead>
+    <tr>
+      <th>通番</th>
+      <th>商品名</th>
+      <th>単価</th>
+      <th>数量</th>
+      <th>小計</th>
+    </tr>
+  </thead>
+  <tbody id="product-table">
+    <!-- JavaScriptで商品を生成 -->
+  </tbody>
+</table>
+
+<!-- ボタン（下） -->
+<div style="text-align: center;">
+  <button class="confirm-btn" onclick="confirmOrder()">注文確定</button>
+  <button class="confirm-btn cancel-btn" onclick="resetOrder()">取消</button>
+</div>
+
+<!-- 結果表示 -->
+<div id="order-result"></div>
+
+<script>
+// 商品データ
+const products = [
+  { code: 'A', name: 'チェキ', price: 1000 },
+  { code: 'B', name: 'ランダムブロマイド(２枚)', price: 2000 },
+  { code: 'C', name: 'ステッカー', price: 200 },
+  { code: 'D', name: 'アクキー', price: 2000 },
+  { code: 'E', name: 'オリシャン', price: 15000 },
+  { code: 'F', name: 'Tシャツ', price: 5500 },
+];
+
+// テーブル生成
+const tableBody = document.getElementById('product-table');
+
+products.forEach((product) => {
+  const row = document.createElement('tr');
+  row.innerHTML = `
+    <td>${product.code}</td>
+    <td>${product.name}</td>
+    <td>${formatNumber(product.price)}円</td>
+    <td>
+      <select onchange="updateSubtotal(this, ${product.price})">
+        ${Array.from({ length: 11 }, (_, i) => `<option value="${i}">${i}</option>`).join('')}
+        <option value="11">11以上を入力</option>
+      </select>
+      <input type="number" class="quantity-input" style="display:none" onchange="updateSubtotal(this, ${product.price})" min="12" />
+    </td>
+    <td class="subtotal">0円</td>
+  `;
+  tableBody.appendChild(row);
+});
+
+// 小計更新
+function updateSubtotal(el, price) {
+  let quantity;
+  const selectEl = el.tagName === 'SELECT' ? el : el.parentElement.querySelector('select');
+  const inputEl = el.tagName === 'INPUT' ? el : el.parentElement.querySelector('input');
+
+  if (selectEl.value === '11') {
+    inputEl.style.display = 'inline-block';
+    quantity = parseInt(inputEl.value);
+    if (isNaN(quantity) || quantity < 12) return;
+  } else {
+    inputEl.style.display = 'none';
+    quantity = parseInt(selectEl.value);
+  }
+
+  const subtotalCell = el.parentElement.nextElementSibling;
+  subtotalCell.textContent = formatNumber(quantity * price) + '円';
+}
+
+// 注文確定
+function confirmOrder() {
+  const rows = document.querySelectorAll('#product-table tr');
+  let resultHTML = '<h2>ご注文内容</h2><ul>';
+  let total = 0;
+
+  rows.forEach(row => {
+    const code = row.cells[0].innerText;
+    const name = row.cells[1].innerText;
+    const price = parseInt(row.cells[2].innerText.replace(/[^0-9]/g, ''));
+    const selectEl = row.cells[3].querySelector('select');
+    const inputEl = row.cells[3].querySelector('input');
+
+    let quantity = (selectEl.value === '11') ? parseInt(inputEl.value) : parseInt(selectEl.value);
+    if (isNaN(quantity) || quantity <= 0) return;
+
+    const subtotal = quantity * price;
+    resultHTML += `<li>${code} ${name} × ${quantity} = ${formatNumber(subtotal)}円</li>`;
+    total += subtotal;
+  });
+
+  resultHTML += `</ul><h3>合計金額: ${formatNumber(total)}円</h3>`;
+  resultHTML += `<h3>このQRコードをスタッフに見せてください</h3>`;
+
+  const orderResult = document.getElementById('order-result');
+  orderResult.innerHTML = resultHTML;
+
+  // QRコード表示
+  const qrContainer = document.createElement('div');
+  qrContainer.id = 'qr-code';
+  qrContainer.style.marginTop = '20px';
+  orderResult.appendChild(qrContainer);
+
+  const qrText = rowsToText(rows);
+
+  new QRCode(qrContainer, {
+    text: qrText,
+    width: 200,
+    height: 200
+  });
+
+  orderResult.scrollIntoView({ behavior: 'smooth' });
+}
+
+// QRコード用テキスト
+function rowsToText(rows) {
+  let text = 'ご注文内容:\n';
+  rows.forEach(row => {
+    const name = row.cells[1].innerText;
+    const price = parseInt(row.cells[2].innerText.replace(/[^0-9]/g, ''));
+    const selectEl = row.cells[3].querySelector('select');
+    const inputEl = row.cells[3].querySelector('input');
+
+    let quantity = (selectEl.value === '11') ? parseInt(inputEl.value) : parseInt(selectEl.value);
+    if (isNaN(quantity) || quantity <= 0) return;
+
+    const subtotal = quantity * price;
+    text += `${name} × ${quantity} = ${formatNumber(subtotal)}円\n`;
+  });
+  return text;
+}
+
+// リセット
+function resetOrder() {
+  document.querySelectorAll('#product-table select').forEach(s => s.value = '0');
+  document.querySelectorAll('#product-table input').forEach(i => {
+    i.value = '';
+    i.style.display = 'none';
+  });
+  document.querySelectorAll('#product-table .subtotal').forEach(cell => cell.textContent = '0円');
+  document.getElementById('order-result').innerHTML = '';
+}
+
+// 数値フォーマット
+function formatNumber(num) {
+  return num.toLocaleString();
+}
+</script>
+
+</body>
+</html>
